@@ -6,31 +6,41 @@
   <title>Distance Quest 7.0 – Happy Birthday Hubby! 💙</title>
   <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
   <style>
-    /* --- CORE STYLES --- */
     body, html {
       margin: 0; padding: 0; height: 100%; font-family: 'VT323', monospace;
       background: #000; overflow: hidden; touch-action: none;
-      user-select: none; -webkit-user-select: none;
     }
+    
+    /* Start Screen Overlay */
+    #startScreen {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.95); z-index: 100;
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      color: white; text-align: center;
+    }
+    #startBtn {
+      padding: 20px 40px; font-size: 30px; background: #ff77aa; border: none;
+      color: white; font-family: 'VT323', monospace; cursor: pointer;
+      border-radius: 10px; margin-top: 20px; box-shadow: 0 0 15px #ff77aa;
+    }
+
     #gameArea { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
     
-    /* --- MAP & CAMERA --- */
     #map {
       position: absolute; width: 3000px; height: 1500px;
       background: url('https://i.imgur.com/5KzXoWb.jpg') repeat;
       background-size: cover; transition: left 0.1s linear, top 0.1s linear;
       image-rendering: pixelated;
-      will-change: transform;
     }
 
-    /* --- CHARACTERS --- */
     .character { 
       position: absolute; 
       background-size: contain; 
       background-repeat: no-repeat; 
       z-index: 10; 
       image-rendering: pixelated;
-      transform: translateZ(0); /* Hardware acceleration */
+      /* Fallback colors if images break */
+      background-color: transparent;
     }
     #knight   { width: 64px; height: 128px; background-image: url('https://i.imgur.com/Hw4h8Tf.png'); }
     #princess { width: 64px; height: 128px; background-image: url('https://i.imgur.com/mO4P68N.png'); }
@@ -47,7 +57,6 @@
     }
     @keyframes float { from { transform: translateY(0); } to { transform: translateY(-25px); } }
 
-    /* --- UI ELEMENTS --- */
     #score {
       position: absolute; top: 10px; left: 10px; font-size: 28px; color: #ff77aa;
       background: rgba(0,0,0,0.6); padding: 8px 12px; border-radius: 6px; z-index: 20;
@@ -71,28 +80,34 @@
       pointer-events: none; z-index: 8; line-height: 1.1;
     }
 
-    /* --- TOUCH ZONE --- */
-    #touchZone {
-      position: absolute; bottom: 20px; left: 20px; width: 180px; height: 180px;
-      background: radial-gradient(circle, rgba(100,100,255,0.15), transparent 70%);
-      border: 2px dashed rgba(255,255,255,0.3); border-radius: 50%; z-index: 30;
-      display: none; touch-action: none;
+    /* Virtual Joystick */
+    #joystickZone {
+      position: absolute; bottom: 50px; left: 50px; width: 150px; height: 150px;
+      background: rgba(255, 255, 255, 0.1); border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%; z-index: 30; touch-action: none; display: none;
     }
     #joystickKnob {
-      position: absolute; width: 60px; height: 60px; background: rgba(255,255,255,0.5);
+      position: absolute; width: 60px; height: 60px; background: rgba(255, 119, 170, 0.8);
       border-radius: 50%; top: 50%; left: 50%; transform: translate(-50%, -50%);
-      pointer-events: none; display: none;
+      pointer-events: none; box-shadow: 0 0 10px rgba(255, 119, 170, 0.5);
     }
 
-    /* --- RESPONSIVE --- */
     @media (max-width: 800px) {
-      #touchZone { display: block; }
       #text { font-size: 24px; bottom: 100px; }
       #birthdayTitle { font-size: 48px; top: 5%; }
+      #joystickZone { display: block; }
     }
   </style>
 </head>
 <body>
+
+<!-- Start Screen Overlay -->
+<div id="startScreen">
+  <h1>Distance Quest 7.0</h1>
+  <p>Happy Birthday Hubby Imran! 💙</p>
+  <p style="font-size: 20px; color: #aaa;">(Turn up your volume!)</p>
+  <button id="startBtn">Start Game 🎮</button>
+</div>
 
 <audio id="bgMusic" loop preload="auto">
   <source src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8c8a73467.mp3">
@@ -108,13 +123,14 @@ My Buwan!</div>
     <div id="princess" class="character"></div>
     <div id="cat" class="character"></div>
     <div id="lantern">🏮</div>
-    <div id="text">Use WASD or drag in the circle → move to collect hearts!</div>
+    <div id="text">Use Joystick or WASD to move!</div>
   </div>
 
   <div id="score">Hearts: 0</div>
   <div id="minimap"></div>
   
-  <div id="touchZone">
+  <!-- Virtual Joystick -->
+  <div id="joystickZone">
     <div id="joystickKnob"></div>
   </div>
 </div>
@@ -130,7 +146,9 @@ const scoreUI  = document.getElementById('score');
 const textUI   = document.getElementById('text');
 const music    = document.getElementById('bgMusic');
 const minimap  = document.getElementById('minimap');
-const touchZone = document.getElementById('touchZone');
+const startScreen = document.getElementById('startScreen');
+const startBtn = document.getElementById('startBtn');
+const joystickZone = document.getElementById('joystickZone');
 const joystickKnob = document.getElementById('joystickKnob');
 
 // Game State
@@ -139,6 +157,7 @@ let catPos    = { x: 80,  y: 400 };
 let score     = 0;
 const targetScore = 12;
 let isEndingUnlocked = false;
+let isGameRunning = false;
 
 // ─── Islands & Princess ─────────────────────────
 const islands = [
@@ -158,9 +177,15 @@ princess.style.left = princessPos.x + 'px';
 princess.style.top  = princessPos.y + 'px';
 
 music.volume = 0.25;
-document.addEventListener('click', () => {
-  if(music.paused) music.play().catch(() => {});
-}, { once: true });
+
+// Start Game Logic
+startBtn.addEventListener('click', () => {
+  startScreen.style.display = 'none';
+  music.play().catch(e => console.log("Audio play failed:", e));
+  isGameRunning = true;
+  spawnContent();
+  gameLoop();
+});
 
 // Spawn hearts & monsters
 function spawnContent() {
@@ -187,76 +212,90 @@ function spawnContent() {
     }
   });
 }
-spawnContent();
 
 // ─── Input Handling ─────────────────────────────
 const keys = {};
 window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
 window.addEventListener('keyup',   e => keys[e.key.toLowerCase()] = false);
 
-// Touch Joystick Logic
-let touchId = null;
-let touchStartX = 0, touchStartY = 0;
+// Virtual Joystick Logic
 let joystickActive = false;
-const maxRadius = 60; // Max distance knob can move
+let joystickCenterX = 0;
+let joystickCenterY = 0;
+let joystickTouchId = null;
 
-touchZone.addEventListener('touchstart', e => {
+joystickZone.addEventListener('touchstart', e => {
   e.preventDefault();
   const t = e.changedTouches[0];
-  touchId = t.identifier;
-  touchStartX = t.clientX;
-  touchStartY = t.clientY;
+  joystickTouchId = t.identifier;
   joystickActive = true;
-  joystickKnob.style.display = 'block';
+  
+  // Get center of joystick zone
+  const rect = joystickZone.getBoundingClientRect();
+  joystickCenterX = rect.left + rect.width / 2;
+  joystickCenterY = rect.top + rect.height / 2;
+  
+  // Move knob to finger
+  moveJoystickKnob(t.clientX, t.clientY);
 }, { passive: false });
 
-touchZone.addEventListener('touchmove', e => {
+joystickZone.addEventListener('touchmove', e => {
   e.preventDefault();
   if (!joystickActive) return;
   
   for (let i = 0; i < e.changedTouches.length; i++) {
-    if (e.changedTouches[i].identifier === touchId) {
+    if (e.changedTouches[i].identifier === joystickTouchId) {
       const t = e.changedTouches[i];
-      let dx = t.clientX - touchStartX;
-      let dy = t.clientY - touchStartY;
+      moveJoystickKnob(t.clientX, t.clientY);
       
-      // Calculate distance
+      // Calculate movement vector
+      const dx = t.clientX - joystickCenterX;
+      const dy = t.clientY - joystickCenterY;
       const distance = Math.sqrt(dx*dx + dy*dy);
+      const maxDist = 40; // Max knob movement
       
-      // Clamp distance
-      if (distance > maxRadius) {
-        const ratio = maxRadius / distance;
-        dx *= ratio;
-        dy *= ratio;
+      // Normalize and apply speed
+      const speed = 10;
+      if (distance > 0) {
+        const moveX = (dx / distance) * speed;
+        const moveY = (dy / distance) * speed;
+        knightPos.x += moveX;
+        knightPos.y += moveY;
       }
-
-      // Move visual knob
-      joystickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-
-      // Apply movement to knight (normalized vector * speed)
-      const speed = 12;
-      knightPos.x += (dx / maxRadius) * speed;
-      knightPos.y += (dy / maxRadius) * speed;
     }
   }
 }, { passive: false });
 
-const endTouch = (e) => {
+const endJoystick = (e) => {
   for (let i = 0; i < e.changedTouches.length; i++) {
-    if (e.changedTouches[i].identifier === touchId) {
+    if (e.changedTouches[i].identifier === joystickTouchId) {
       joystickActive = false;
       joystickKnob.style.transform = `translate(-50%, -50%)`;
-      joystickKnob.style.display = 'none';
     }
   }
 };
-touchZone.addEventListener('touchend', endTouch);
-touchZone.addEventListener('touchcancel', endTouch);
+joystickZone.addEventListener('touchend', endJoystick);
+joystickZone.addEventListener('touchcancel', endJoystick);
+
+function moveJoystickKnob(clientX, clientY) {
+  const dx = clientX - joystickCenterX;
+  const dy = clientY - joystickCenterY;
+  const distance = Math.sqrt(dx*dx + dy*dy);
+  const maxDist = 40; // Max knob movement
+  
+  if (distance > maxDist) {
+    const ratio = maxDist / distance;
+    joystickKnob.style.transform = `translate(calc(-50% + ${dx * ratio}px), calc(-50% + ${dy * ratio}px))`;
+  } else {
+    joystickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+  }
+}
 
 // ─── Game Loop ──────────────────────────────────
 let frameCount = 0;
 
 function gameLoop() {
+  if (!isGameRunning) return;
   frameCount++;
 
   // 1. Keyboard Movement
@@ -284,68 +323,4 @@ function gameLoop() {
   const mapW = 3000;
   const mapH = 1500;
   const viewW = window.innerWidth;
-  const viewH = window.innerHeight;
-  
-  // Calculate ideal camera position
-  let camX = knightPos.x - viewW / 2 + 32;
-  let camY = knightPos.y - viewH / 2 + 64;
-
-  // Clamp camera to map bounds
-  camX = Math.max(0, Math.min(camX, mapW - viewW));
-  camY = Math.max(0, Math.min(camY, mapH - viewH));
-
-  map.style.left = -camX + 'px';
-  map.style.top  = -camY + 'px';
-
-  // 5. Collisions
-  checkCollisions();
-
-  // 6. Minimap (Throttled for performance)
-  if (frameCount % 5 === 0) updateMinimap();
-
-  requestAnimationFrame(gameLoop);
-}
-gameLoop();
-
-// ─── Collisions & Ending ────────────────────────
-function checkCollisions() {
-  if (isEndingUnlocked) return;
-
-  // Hearts
-  for (let i = hearts.length - 1; i >= 0; i--) {
-    const h = hearts[i];
-    if (Math.hypot(knightPos.x - h.x, knightPos.y - h.y) < 50) {
-      h.el.remove();
-      hearts.splice(i, 1);
-      score++;
-      scoreUI.textContent = `Hearts: ${score}`;
-      
-      if (score >= targetScore) {
-        unlockEnding();
-      }
-    }
-  }
-
-  // Monsters
-  monsters.forEach(m => {
-    if (!m.defeated && Math.hypot(knightPos.x - m.x, knightPos.y - m.y) < 60) {
-      m.defeated = true;
-      m.el.style.display = 'none';
-      textUI.textContent = 'Monster Defeated! 💪';
-      setTimeout(() => { if (textUI.textContent.includes('Defeated')) textUI.textContent = ''; }, 2200);
-    }
-  });
-
-  // Princess ending
-  if (score >= targetScore && Math.hypot(knightPos.x - princessPos.x, knightPos.y - princessPos.y) < 60) {
-    unlockEnding();
-  }
-}
-
-function unlockEnding() {
-  if (isEndingUnlocked) return;
-  isEndingUnlocked = true;
-
-  lantern.style.display = 'block';
-  lantern.style.left = princessPos.x + 'px';
-  lantern.style.top  = (princessPos.y - 110
+  const
