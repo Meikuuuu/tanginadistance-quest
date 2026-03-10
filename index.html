@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <title>Distance Quest 7.0 – For My Buwan 💙</title>
+  <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: 'VT323', monospace;
+      background: #000;
+      overflow: hidden;
+      touch-action: none; /* better mobile feel */
+    }
+    #gameArea {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+    }
+    #map {
+      position: absolute;
+      width: 3000px;
+      height: 1500px;
+      background: url('https://i.imgur.com/5KzXoWb.jpg') repeat;
+      background-size: cover;
+      transition: left 0.15s, top 0.15s;
+      image-rendering: pixelated;
+    }
+    .character {
+      position: absolute;
+      width: 64px;
+      height: 128px;
+      background-size: contain;
+      background-repeat: no-repeat;
+      z-index: 10;
+      image-rendering: pixelated;
+    }
+    #knight   { background-image: url('https://i.imgur.com/Hw4h8Tf.png'); }
+    #princess { background-image: url('https://i.imgur.com/mO4P68N.png'); }
+    #cat {
+      width: 48px;
+      height: 48px;
+      background-image: url('https://i.imgur.com/F2s6kgI.png');
+    }
+    .monster  { 
+      position: absolute;
+      font-size: 60px;
+      z-index: 12;
+    }
+    .heart {
+      position: absolute;
+      font-size: 40px;
+      cursor: pointer;
+      z-index: 11;
+      animation: pulse 1.2s infinite alternate;
+    }
+    @keyframes pulse {
+      from { transform: scale(1); }
+      to   { transform: scale(1.25); }
+    }
+    #lantern {
+      position: absolute;
+      font-size: 80px;
+      display: none;
+      z-index: 15;
+      animation: float 3.5s ease-in-out infinite alternate;
+    }
+    @keyframes float {
+      from { transform: translateY(0); }
+      to   { transform: translateY(-25px); }
+    }
+    #score {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      font-size: 28px;
+      color: #ff77aa;
+      background: rgba(0,0,0,0.6);
+      padding: 8px 12px;
+      border-radius: 6px;
+      z-index: 20;
+    }
+    #text {
+      position: absolute;
+      bottom: 20px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 28px;
+      color: white;
+      text-shadow: 3px 3px 6px #000;
+      pointer-events: none;
+      z-index: 20;
+    }
+    #minimap {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 160px;
+      height: 100px;
+      background: rgba(0,0,0,0.6);
+      border: 2px solid #aaa;
+      border-radius: 6px;
+      z-index: 25;
+    }
+    .minimap-dot {
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+    /* Touch controls */
+    #touchZone {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      width: 180px;
+      height: 180px;
+      background: radial-gradient(circle, rgba(100,100,255,0.15), transparent 70%);
+      border-radius: 50%;
+      z-index: 30;
+      display: none;
+      touch-action: none;
+    }
+    @media (max-width: 800px) {
+      #touchZone { display: block; }
+      #text { font-size: 24px; bottom: 100px; }
+    }
+  </style>
+</head>
+<body>
+
+<audio id="bgMusic" loop preload="auto">
+  <source src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8c8a73467.mp3">
+</audio>
+
+<div id="gameArea">
+  <div id="map">
+    <div id="knight"   class="character"></div>
+    <div id="princess" class="character"></div>
+    <div id="cat"      class="character"></div>
+    <div id="lantern">🏮</div>
+    <div id="text">Use WASD or drag in the circle → move to collect hearts!</div>
+  </div>
+
+  <div id="score">Hearts: 0</div>
+  <div id="minimap"></div>
+  <div id="touchZone"></div>
+</div>
+
+<script>
+// ────────────────────────────────────────────────
+const knight   = document.getElementById('knight');
+const cat      = document.getElementById('cat');
+const princess = document.getElementById('princess');
+const lantern  = document.getElementById('lantern');
+const map      = document.getElementById('map');
+const scoreUI  = document.getElementById('score');
+const textUI   = document.getElementById('text');
+const music    = document.getElementById('bgMusic');
+const minimap  = document.getElementById('minimap');
+const touchZone = document.getElementById('touchZone');
+
+let knightPos = { x: 120, y: 380 };
+let catPos    = { x: 80,  y: 400 };
+let score     = 0;
+const targetScore = 12;
+
+// ─── Islands ─────────────────────────────────────
+const islands = [
+  { x: 180,  y: 360, monster: true,  hearts: 3 },
+  { x: 780,  y: 580, monster: true,  hearts: 3 },
+  { x: 1480, y: 480, monster: true,  hearts: 3 },
+  { x: 2180, y: 680, monster: false, hearts: 3 }  // final
+];
+
+const princessPos = { x: 2780, y: 620 };
+
+let hearts   = [];
+let monsters = [];
+
+// ─── Init ────────────────────────────────────────
+princess.style.left = princessPos.x + 'px';
+princess.style.top  = princessPos.y + 'px';
+
+music.volume = 0.25;
+document.addEventListener('click', () => music.play().catch(() => {}), { once: true });
+
+// ─── Spawn content ───────────────────────────────
+function spawnContent() {
+  islands.forEach(island => {
+    // Hearts
+    for (let i = 0; i < island.hearts; i++) {
+      const h = document.createElement('div');
+      h.className = 'heart';
+      h.innerHTML = '💗';
+      const hx = island.x + 40 + Math.random() * 160;
+      const hy = island.y + 30 + Math.random() * 100;
+      h.style.left = hx + 'px';
+      h.style.top  = hy + 'px';
+      map.appendChild(h);
+      hearts.push({ el: h, x: hx, y: hy });
+    }
+    // Monster
+    if (island.monster) {
+      const m = document.createElement('div');
+      m.className = 'monster';
+      m.innerHTML = '👾';
+      m.style.left = (island.x + 90) + 'px';
+      m.style.top  = (island.y + 40) + 'px';
+      map.appendChild(m);
+      monsters.push({ el: m, x: island.x + 90, y: island.y + 40, defeated: false });
+    }
+  });
+}
+spawnContent();
+
+// ─── Movement ────────────────────────────────────
+const keys = {};
+window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; });
+window.addEventListener('keyup',   e => { keys[e.key.toLowerCase()] = false; });
+
+function updateKeyboardMovement() {
+  const step = 18;
+  if (keys['w'] || keys['arrowup'])    knightPos.y -= step;
+  if (keys['s'] || keys['arrowdown'])  knightPos.y += step;
+  if (keys['a'] || keys['arrowleft'])  knightPos.x -= step;
+  if (keys['d'] || keys['arrowright']) knightPos.x += step;
+
+  knightPos.x = Math.max(0, Math.min(map.offsetWidth - 64,  knightPos.x));
+  knightPos.y = Math.max(0, Math.min(map.offsetHeight - 128, knightPos.y));
+}
+
+// ─── Touch support (simple virtual joystick) ─────
+let touchActive = false;
+let touchStartX = 0;
+let touchStartY = 0;
+
+touchZone.addEventListener('touchstart', e => {
+  e.preventDefault();
+  touchActive = true;
+  const t = e.touches[0];
+  touchStartX = t.clientX;
+  touchStartY = t.clientY;
+});
+
+touchZone.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (!touchActive) return;
+  const t = e.touches[0];
+  const dx = (t.clientX - touchStartX) * 1.8;
+  const dy = (t.clientY - touchStartY) * 1.8;
+  knightPos.x += dx / 8;
+  knightPos.y += dy / 8;
+});
+
+touchZone.addEventListener('touchend', () => {
+  touchActive = false;
+});
+
+// ─── Game loop ───────────────────────────────────
+function gameLoop() {
+  updateKeyboardMovement();
+
+  // Cat follows (smooth lerp)
+  catPos.x += (knightPos.x - catPos.x - 16) * 0.12;
+  catPos.y += (knightPos.y - catPos.y + 48) * 0.12;
+
+  knight.style.left = knightPos.x + 'px';
+  knight.style.top  = knightPos.y + 'px';
+  cat.style.left    = catPos.x + 'px';
+  cat.style.top     = catPos.y + 'px';
+
+  // Camera
+  const camX = Math.max(window.innerWidth - map.offsetWidth, Math.min(0, window.innerWidth/2 - knightPos.x - 32));
+  const camY = Math.max(window.innerHeight - map.offsetHeight, Math.min(0, window.innerHeight/2 - knightPos.y - 64));
+  map.style.left = camX + 'px';
+  map.style.top  = camY + 'px';
+
+  checkCollisions();
+  updateMinimap();
+
+  requestAnimationFrame(gameLoop);
+}
+gameLoop();
+
+// ─── Collisions ──────────────────────────────────
+function checkCollisions() {
+  // Hearts
+  for (let i = hearts.length - 1; i >= 0; i--) {
+    const h = hearts[i];
+    const dx = knightPos.x - h.x;
+    const dy = knightPos.y - h.y;
+    if (Math.hypot(dx, dy) < 50) {
+      h.el.remove();
+      hearts.splice(i, 1);
+      score++;
+      scoreUI.textContent = `Hearts: ${score}`;
+      if (score >= targetScore) checkEnding();
+    }
+  }
+
+  // Monsters
+  monsters.forEach(m => {
+    if (m.defeated) return;
+    const dx = knightPos.x - m.x;
+    const dy = knightPos.y - m.y;
+    if (Math.hypot(dx, dy) < 60) {
+      m.defeated = true;
+      m.el.style.display = 'none';
+      textUI.textContent = 'Monster Defeated! 💪';
+      setTimeout(() => { if (textUI.textContent.includes('Defeated')) textUI.textContent = ''; }, 2200);
+    }
+  });
+
+  // Princess / ending
+  const pdx = knightPos.x - princessPos.x;
+  const pdy = knightPos.y - princessPos.y;
+  if (score >= targetScore && Math.hypot(pdx, pdy) < 60) {
+    unlockEnding();
+  }
+}
+
+function checkEnding() {
+  if (score < targetScore) return;
+  unlockEnding();
+}
+
+// ─── Ending ──────────────────────────────────────
+function unlockEnding() {
+  lantern.style.display = 'block';
+  lantern.style.left = princessPos.x + 'px';
+  lantern.style.top  = (princessPos.y - 110) + 'px';
+
+  textUI.innerHTML = "Hubby Imran reached My Buwan! 🏮💙";
+
+  // Fireworks
+  for (let i = 0; i < 24; i++) {
+    setTimeout(() => {
+      const f = document.createElement('div');
+      f.innerHTML = Math.random() > 0.5 ? '🎆' : '✨';
+      f.style.position = 'fixed';
+      f.style.left = (20 + Math.random() * 60) + 'vw';
+      f.style.top  = (5 + Math.random() * 50) + 'vh';
+      f.style.fontSize = '60px';
+      f.style.pointerEvents = 'none';
+      document.body.appendChild(f);
+      setTimeout(() => f.remove(), 1800);
+    }, i * 120);
+  }
+
+  // Love message
+  setTimeout(() => {
+    const msg = document.createElement('div');
+    msg.style.cssText = `
+      position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+      width: 86%; max-width: 620px; padding: 30px; font-size: 26px;
+      background: rgba(20,20,30,0.92); border: 4px solid #aaa; border-radius: 12px;
+      color: white; text-align: center; text-shadow: 2px 2px 6px black; z-index: 100;
+    `;
+    msg.innerHTML = `
+      <strong style="color:#ff88cc;font-size:1.3em;">My Buwan 🌙</strong><br><br>
+      Hubby, I love you so much 💙<br>
+      I wish the best for you — always.<br>
+      You make my days brighter, even from afar.<br><br>
+      If we are truly meant to be forever,<br>
+      I hope we meet soon… so I can finally hug you tight 🤍
+    `;
+    document.body.appendChild(msg);
+  }, 2200);
+}
+
+// ─── Minimap ─────────────────────────────────────
+function updateMinimap() {
+  minimap.innerHTML = '';
+  const sx = minimap.offsetWidth / map.offsetWidth;
+  const sy = minimap.offsetHeight / map.offsetHeight;
+
+  const addDot = (x, y, color = '#ff77aa') => {
+    const d = document.createElement('div');
+    d.className = 'minimap-dot';
+    d.style.left = (x * sx) + 'px';
+    d.style.top  = (y * sy) + 'px';
+    d.style.background = color;
+    minimap.appendChild(d);
+  };
+
+  addDot(knightPos.x + 32,   knightPos.y + 64);           // knight
+  addDot(catPos.x + 24,      catPos.y + 24,   '#ffcc00'); // cat
+  addDot(princessPos.x + 32, princessPos.y + 64, 'cyan'); // princess
+}
+</script>
+</body>
+</html>
